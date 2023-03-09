@@ -18,3 +18,5 @@ for (x, y, w, h) in faces:
 cv2.imshow('Faces found', photo)
 
 cv2.waitKey()
+
+
