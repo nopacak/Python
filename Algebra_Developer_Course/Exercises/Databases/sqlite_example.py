@@ -49,33 +49,33 @@ finally:
         sql_connection.close()
 
 
-# insert_sql_query = """
-# INSERT INTO Employees (Name, Email)
-# VALUES(?,?);
-# """  # ? is a placeholder
+insert_sql_query = """
+INSERT INTO Employees (Name, Email)
+VALUES(?,?);
+"""  # ? is a placeholder
 
-# employee_list = [
-#     ("Nikolina Opačak", "nikolina@valcon.com"),
-#     ("Hrvoje Horvat", "hrvoje@email.com"),
-#     ("Marija Marić", "marija@email.com")
-# ]
+employee_list = [
+     ("Nikolina Opačak", "nikolina@valcon.com"),
+     ("Hrvoje Horvat", "hrvoje@email.com"),
+     ("Marija Marić", "marija@email.com")
+ ]
 
-# try:
-#     sql_connection = sqlite3.connect(database_name)
-#     cursor = sql_connection.cursor()
+try:
+    sql_connection = sqlite3.connect(database_name)
+    cursor = sql_connection.cursor()
 
-#     for employee in employee_list:
-#         cursor.execute(insert_sql_query, employee)
+    for employee in employee_list:
+        cursor.execute(insert_sql_query, employee)
     
-#     sql_connection.commit()
-#     cursor.close()
+    sql_connection.commit()
+    cursor.close()
 
-# except sqlite3.Error as error:
-#     print(f"Error!! - {error}")
+except sqlite3.Error as error:
+    print(f"Error!! - {error}")
 
-# finally:
-#     if sql_connection:
-#         sql_connection.close()
+finally:
+    if sql_connection:
+        sql_connection.close()
     
 
 select_all_query = "SELECT * FROM Employees"
