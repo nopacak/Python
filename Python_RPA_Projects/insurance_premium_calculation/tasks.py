@@ -46,8 +46,6 @@ def insurance_calculation():
             condition = (df['ID'] == offer_id) & (df['Status'].isna() | (df['Status'] == ''))
             df.loc[condition, 'Status'] = f"An error occurred at step '{current_step}': {error_message_2}"
             df["Status"] = df["Status"].astype(str)
-            grouped = df.groupby('Base Price')
-            df['Status'] = grouped['Status'].transform(lambda x: x.ffill().bfill())
             df.loc[condition, 'ErrorStage'] = stage
             df.to_csv(csv_file, index=False)
             continue
