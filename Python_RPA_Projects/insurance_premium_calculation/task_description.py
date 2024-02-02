@@ -48,33 +48,33 @@ def calculate_insurance_premium(offer_data):
     """Fills in the form to calculate the insurance premium"""
 
     log_step("Starting 'Calculate the insurance premium' task", log_file)
-    address = ', '.join(filter(None, [street, city, zip_code]))
-    contractor_address = ', '.join(filter(None, [contractor_street, contractor_city, contractor_zip_code]))
+    address = ', '.join(filter(None, [offer_data.street, offer_data.city, offer_data.zip_code]))
+    contractor_address = ', '.join(filter(None, [offer_data.contractor_street, offer_data.contractor_city, offer_data.contractor_zip_code]))
     
 
     # log the offer that is currently being processed
     log_step(f"""Processing data for offer: {offer_id} \n 
-             Owner: {firstName} {lastName} \n
-             Owner oib: {oib} \n
-             Address: {address} \n
-             Contractor: {contractor_firstName} {contractor_lastName} \n
-             Contractor oib: {contractor_oib} \n
-             Contractor address: {contractor_address} \n
-             Chassis: {chassis} \n
-             Registration: {reg} \n
-             Leasing: {leasing} \n
-             Kasko: {only_kasko} \n
-             Bonus: {bonus} \n""", log_file)
+             Owner: {offer_data.firstName} {offer_data.lastName} \n
+             Owner oib: {offer_data.oib} \n
+             Address: {offer_data.full_address} \n
+             Contractor: {offer_data.contractor_firstName} {offer_data.contractor_lastName} \n
+             Contractor oib: {offer_data.contractor_oib} \n
+             Contractor address: {offer_data.contractor_full_address} \n
+             Chassis: {offer_data.chassis} \n
+             Registration: {offer_data.reg} \n
+             Leasing: {offer_data.leasing} \n
+             Kasko: {offer_data.only_kasko} \n
+             Bonus: {offer_data.bonus} \n""", log_file)
     
 
     # Check whether there is a chassis number in database, if not, use registration number
-    if str(chassis) != "":
+    if str(offer_data.chassis) != "":
         wait_and_click('xpath')
-        wait_and_input_text('id', chassis)
+        wait_and_input_text('id', offer_data.chassis)
         browser.press_keys("id", "ENTER")
         
     else:
-        wait_and_input_text("id", reg)
+        wait_and_input_text("id", offer_data.reg)
         browser.press_keys("id", "ENTER")
 
     #10 seconds pause to allow the page to load
@@ -91,26 +91,26 @@ def calculate_insurance_premium(offer_data):
     frame_1 = False
 
     # Check if the registration number matches the one in database, if not, correct it
-    if (str(browser.get_element_attribute('xpath', "textContent"))[0:2] != str(reg_prefix)) and (str(browser.get_element_attribute('xpath', "textContent")) != "BEZ TABLICE"):
+    if (str(browser.get_element_attribute('xpath', "textContent"))[0:2] != str(offer_data.reg_prefix)) and (str(browser.get_element_attribute('xpath', "textContent")) != "BEZ TABLICE"):
         click_element('xpath')
         browser.wait_until_element_is_visible('xpath', timeout=90)
         browser.select_frame('xpath')
 
         table_xpath = 'xpath'
 
-        if reg_prefix != reg:
+        if offer_data.reg_prefix != offer_data.reg:
             wait_and_input_text("id, reg)
             click_element('xpath')
             click_element('xpath')
             click_element('xpath')
 
         
-        elif is_element_visible(table_xpath) and (str(browser.get_element_attribute(table_xpath, "textContent"))[0:2] == reg_prefix):
+        elif is_element_visible(table_xpath) and (str(browser.get_element_attribute(table_xpath, "textContent"))[0:2] == offer_data.reg_prefix):
             click_element('xpath')
             click_element('xpath')
 
         else:
-            wait_and_input_text("id", reg)
+            wait_and_input_text("id", offer_data.reg)
             click_element('xpath')
             click_element('xpath')
             browser.wait_until_element_is_visible('xpath', timeout=90)
@@ -127,14 +127,14 @@ def calculate_insurance_premium(offer_data):
     close_all()
 
     # Selecting the correct option for leasing based on the database value
-    if leasing:
+    if offer_data.leasing:
         click_element('xpath')
     else:
         click_element('xpath')
 
     
     # Selecting the correct option for kasko based on the database value
-    if only_kasko:
+    if offer_data.only_kasko:
         if is_element_visible('xpath'):
             click_element('xpath')
     else:
@@ -146,11 +146,11 @@ def calculate_insurance_premium(offer_data):
 
     # Check if the input field for oib is visible
     if is_element_visible('xpath'):
-        if leasing:
-            input_text('xpath', contractor_oib)
+        if offer_data.leasing:
+            input_text('xpath', offer_data.contractor_oib)
             click_element('id')
         else:
-            input_text('xpath', oib)
+            input_text('xpath', offer_data.oib)
             click_element('id')
 
     # 2 seconds pause to allow the page to load
@@ -175,7 +175,7 @@ def calculate_insurance_premium(offer_data):
     coins_oib = str(browser.get_element_attribute(oib_xpath, 'textContent'))
     
     # Check if the oib matches the one in database, if not, correct it
-    if leasing and (coins_oib != str(contractor_oib)):
+    if offer_data.leasing and (coins_oib != str(offer_data.contractor_oib)):
         click_element('xpath')
         frame_2 = False
         if frame_1:
@@ -185,10 +185,10 @@ def calculate_insurance_premium(offer_data):
         else:
             browser.wait_until_element_is_visible('xpath', timeout=90)
             browser.select_frame('xpath')
-        change_oib(contractor_oib)
+        change_oib(offer_data.contractor_oib)
 
 
-    elif not leasing and (coins_oib != str(oib)):
+    elif not offer_data.leasing and (coins_oib != str(offer_data.oib)):
         click_element('xpath')
         frame_2 = False
         if frame_1:
@@ -198,7 +198,7 @@ def calculate_insurance_premium(offer_data):
         else:
             browser.wait_until_element_is_visible('xpath', timeout=90)
             browser.select_frame('xpath')
-        change_oib(oib)
+        change_oib(offer_data.oib)
     
     browser.wait_until_element_is_visible(oib_xpath, timeout=90)
 
@@ -219,74 +219,45 @@ def calculate_insurance_premium(offer_data):
         return False
     rows_to_check = [5, 6]  
 
-    if leasing and check_zip_code_mismatch(contractor_zip_code,rows_to_check):
+    if offer_data.leasing and check_zip_code_mismatch(offer_data.contractor_zip_code,rows_to_check):
         set_status_column(offer_id, "Address data does not match.")
         return True
-        #click_element('xpath=//*[@id="podaci_uloge"]')
-        # if frame_1 and frame_2:
-        #     browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_3"]/iframe', timeout=90)
-        #     browser.select_frame('xpath=//*[@id="apex_dialog_3"]/iframe')
-        # elif frame_1 and not frame_2:
-        #     browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_2"]/iframe', timeout=90)
-        #     browser.select_frame('xpath=//*[@id="apex_dialog_2"]/iframe')
-        # else:
-        #     browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_1"]/iframe', timeout=90)
-        #     browser.select_frame('xpath=//*[@id="apex_dialog_1"]/iframe')
-        # click_element('xpath=//*[@id="P2200_32_10_OIB_OPEN_LOV"]')
-        # browser.wait_until_element_is_visible('xpath=//*[@id="mlov_tbl_adr"]/tbody/tr[1]/td[6]/a', timeout=90)
-        # click_element('xpath=//*[@id="mlov_tbl_adr"]/tbody/tr[1]/td[6]/a')
-        # print(browser.get_window_handles())
-        # print(browser.get_window_titles())
 
 
-    elif not leasing and check_zip_code_mismatch(zip_code,rows_to_check):
+    elif not offer_data.leasing and check_zip_code_mismatch(offer_data.zip_code,rows_to_check):
         set_status_column(offer_id, "Address data does not match.")
         return True
-        # click_element('xpath=//*[@id="podaci_uloge"]')
-        # if frame_1 and frame_2:
-        #     browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_3"]/iframe', timeout=90)
-        #     select_frame('xpath=//*[@id="apex_dialog_3"]/iframe')
-        # elif frame_1 and not frame_2:
-        #     browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_2"]/iframe', timeout=90)
-        #     browser.select_frame('xpath=//*[@id="apex_dialog_2"]/iframe')
-        # else:
-        #     browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_1"]/iframe', timeout=90)
-        #     browser.select_frame('xpath=//*[@id="apex_dialog_1"]/iframe')
-        # click_element('xpath=//*[@id="P2200_32_10_OIB_OPEN_LOV"]')
-        # browser.wait_until_element_is_visible('xpath=//*[@id="mlov_tbl_adr"]/tbody/tr[1]/td[6]/a', timeout=90)
-        # click_element('xpath=//*[@id="mlov_tbl_adr"]/tbody/tr[1]/td[6]/a')
-        # print(browser.get_window_handles())
-        # print(browser.get_window_titles())
 
 
 
-    if str(bonus) not in ("50", "0"):
+
+    if str(offer_data.bonus) not in ("50", "0"):
         click_element('xpath')
         browser.wait_until_element_is_visible('xpath', timeout=90)
         browser.select_frame('xpath')
         click_element('xpath)
         browser.wait_until_element_is_visible('xpath', timeout=90)
-        if str(bonus) == "10":
+        if str(offer_data.bonus) == "10":
             click_element('xpath')
-        elif str(bonus) == "15":
+        elif str(offer_data.bonus) == "15":
             click_element('xpath')
-        elif str(bonus) == "20":
+        elif str(offer_data.bonus) == "20":
             click_element('xpath')
-        elif str(bonus) == "25":
+        elif str(offer_data.bonus) == "25":
             click_element('xpath')
-        elif str(bonus) == "30":
+        elif str(offer_data.bonus) == "30":
             click_element('xpath')
-        elif str(bonus) == "35":
+        elif str(offer_data.bonus) == "35":
             click_element('xpath')
-        elif str(bonus) == "40":
+        elif str(offer_data.bonus) == "40":
             click_element('xpath')
-        elif str(bonus) == "45":
+        elif str(offer_data.bonus) == "45":
             click_element('xpath')
         click_element('xpath')
 
         if is_element_visible_by_text_attribute("Some warning message"):
             click_element('xpath')
-        if str(bonus) == "" or None:
+        if str(offer_data.bonus) == "" or None:
             print("Bonus unknown")
         browser.unselect_frame()
 
@@ -297,7 +268,7 @@ def calculate_insurance_premium(offer_data):
     if is_element_visible('id'):
         click_element('xpath')
         browser.wait_until_element_is_visible(get_text_xpath("Some value"), timeout=60)
-        input_text('id', reg_prefix)
+        input_text('id', offer_data.reg_prefix)
         time.sleep(5)
         browser.press_keys('id', "ENTER")
         time.sleep(5)
@@ -358,23 +329,23 @@ def show_premium(offer_id, bonus):
         # Retrieve all options from the dropdown as WebElement objects
         options_1 = Select(browser.find_element('id')).options
         # Get the last option's value
-        komercijalni_popust = float(options_1[-1].get_attribute('value'))
+        commercial_discount = float(options_1[-1].get_attribute('value'))
     else:
-        komercijalni_popust = ""
+        commercial_discount = ""
 
     if is_element_visible('id'):
         #repeat the same for the second dropdown
         options_2 = Select(browser.find_element('id')).options
-        popust_savjetnika = float(options_2[-1].get_attribute('value'))
+        advisor_discount = float(options_2[-1].get_attribute('value'))
     else:
-        popust_savjetnika = ""
+        advisor_discount = ""
 
 
     df = pd.read_csv(csv_file)
     # Update the DataFrame
     df.loc[df['ID'] == offer_id, 'Column1'] = insurance_premium
-    df.loc[df['ID'] == offer_id, 'Column2'] = komercijalni_popust
-    df.loc[df['ID'] == offer_id, 'Column3'] = popust_savjetnika
+    df.loc[df['ID'] == offer_id, 'Column2'] = commercial_discount
+    df.loc[df['ID'] == offer_id, 'Column3'] = advisor_discount
 
     grouped = df.groupby('Column1')
 
