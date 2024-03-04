@@ -1,304 +1,312 @@
 from selenium.webdriver.support.ui import Select
-from selenium_functions import *
-from config import *
+from .selenium_functions import *
 import time
+import base64
+import datetime
+import pandas as pd
 
+date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log_file = f"logs/robot_{date}.log"
+
+# Decode login credentials from base64
+user = base64.b64decode("user").decode('utf-8')
+secret = base64.b64decode("passcode").decode('utf-8')
+
+# Declare some xpath variables
+cvh_xpath = 'xpath=//*[@id="report_cvhPregledReg"]/tbody/tr[2]/td[2]/span'
+oib_input_field = 'xpath=//*[@id="P2000_32_10_OIB_X"]'
+oib_xpath = 'xpath=//*[@id="report_rgn_uloga"]/tbody/tr[1]/td[2]'
+
+
+# Defining a function to change the oib if it doesn't match the one in database
+def change_oib(personal_identification_number):
+    input_text('id=P2200_32_10_OIB', personal_identification_number)
+    browser.press_keys('xpath=//*[@id="snkLovSearch"]', "ENTER")
+    wait_and_click('xpath=//*[@id="mlov_tbl_stranka"]/tbody/tr')
+    click_element('xpath=//*[@id="sLovBtnGetVals"]')
+    wait_and_click('xpath=//*[@id="B263642850160457003"]/span[3]')
+    browser.unselect_frame()
+
+# Defining a function to set the field "registarsko područje" to the correct value
+def set_registarsko_područje(reg_prefix):
+    click_element('xpath=//*[@id="P2000_32_10_RGP_holder"]/tbody/tr/td/span')
+    browser.wait_until_element_is_visible(get_text_xpath("-- Isprazni vrijednost --"), timeout=60)
+    input_text('id=mlovSearch', reg_prefix)
+    browser.press_keys('id=mlovSearch', "ENTER")
+    click_element('xpath=//*[@id="ui-id-2"]/div[2]/table/tbody/tr[2]/td[2]')
+
+# Defining a function to set the bonus to the correct value
+def set_bonus(df, bonus):
+    if str(bonus) == "" or None:
+        df["Status"] = "Bonus nije naveden u bazi. Molim ručnu provjeru."
+        return df, True    
+    click_element('xpath=//*[@id="btnPrijenosPS"]/span[3]')
+    browser.wait_until_element_is_visible('xpath://iframe[@title="Prijenos PS"]', timeout=90)
+    browser.select_frame('xpath://iframe[@title="Prijenos PS"]')
+    click_element('xpath=//*[@id="P2109_PS_holder"]/tbody/tr/td/span')
+    browser.wait_until_element_is_visible('xpath=//*[@id="ui-id-4"]/div[2]/table/tbody/tr[1]', timeout=90)
+
+    # Convert bonus to integer for calculation
+    bonus_value = int(bonus)
+    # Calculate the row index based on the bonus value
+    row_index = 14 - (bonus_value // 5)
+    # Click the element using the calculated row index
+    click_element(f'xpath=//*[@id="ui-id-5"]/div[2]/table/tbody/tr[{row_index}]')
+    click_element('xpath=//*[@id="B263700687058067301"]')
+
+    if is_element_visible_by_text_attribute("Premijski stupanj mora biti 50."):
+        click_element('xpath=//*[@id="closeModal"]/span[2]')
+        df["Bonus"] = "50"
+    browser.unselect_frame()
+    return df, False
+
+
+# Defining functions for checking the zip code mismatch
+def get_xpath(row, column):
+    return f'//*[@id="report_rgn_uloga"]/tbody/tr[{row}]/td[{column}]'
+
+def check_zip_code_mismatch(zip_code, rows):
+    for row in rows:
+        label = str(browser.get_element_attribute(get_xpath(row, 1), 'textContent'))
+        value = str(browser.get_element_attribute(get_xpath(row, 2), 'textContent'))
+        if label == "Poštanski broj" and value != str(zip_code):
+            return True
+    return False
 
 # Defining each step of the process as a function (task) 
-
-
-# Step 1: Open the website
-def open_the_website():
-    log_step("Opening the website", log_file)
+    
+# Step 1: Open the Crosig website
+def open_insurance_website():
     """Navigates to the given URL"""
-    open_browser('url of the website')
-    log_step("Website opened successfully", log_file)
+    open_browser('website url')
 
 
-
-# Step 2: Log in to the website
-def log_in():
+# Step 2: Log in to the Crosig website
+def log_in(df):
     """Fills in the login form and clicks the 'Log in' button"""
-    log_step("Logging in", log_file)
     global user, secret
-    wait_and_input_text("id", user)
-    input_text("name", secret)
-    click_element("id")
-    log_step("Logged in successfully", log_file)
-
+    wait_and_input_text("id=P101_USERNAME", user)
+    input_text("name=P101_PASSWORD", secret)
+    click_element("id=P101_LOGIN")
+    if is_element_visible('xpath=//*[@id="jGrowl"]/div[2]'):
+        df["Status"] = "Prijavni podaci nisu ispravni. Molim izmjenu prijavnih podataka (korisničko ime/lozinka)."
+        return df, True
+    return df, False
 
 
 # Step 3: Navigate to the data input page
-def navigate_website_to_data_input(offer_id):
-    xpath = ['list of several xpaths']
+def navigate_website_to_data_input(df):
+    xpath = ['xpath=//*[@id="R54138048149159531"]/div/ul/li[1]/a/div[1]',
+        'xpath=//*[@id="R86718136660563338"]/div/ul/li[2]/a',
+        'xpath=//*[@id="R86861457409699763"]/ul/li[1]/a',
+        'xpath=//*[@id="R270691103014061901"]/div[2]/div/h1',
+        'xpath=//*[@id="btnNoviAO"]/span[3]',
+        'xpath=//*[@id="btnRetailAO"]/span[3]']
     
     for i in xpath:
         wait_and_click(i)
 
-    if is_element_visible_by_text_attribute("some warning message"):
-        set_status_column(offer_id, "Please process manually")
-        return True
-    return False
+    if is_element_visible_by_text_attribute("AJAX"):
+        df["Status"] = "Greška u aplikaciji coins. Molim ručni izračun."
+        return df, True
+    return df, False
 
 
 
-# Step 4: Calculate the insurance premium (input all data and then click on "Calculate" button)
-def calculate_insurance_premium(offer_data):
+# Step 4: Calculate the insurance premium (input all data and then click on "Izracun" button)
+def calculate_insurance_premium(df,offer_data):
     
     """Fills in the form to calculate the insurance premium"""
 
-    log_step("Starting 'Calculate the insurance premium' task", log_file)
-    address = ', '.join(filter(None, [offer_data.street, offer_data.city, offer_data.zip_code]))
-    contractor_address = ', '.join(filter(None, [offer_data.contractor_street, offer_data.contractor_city, offer_data.contractor_zip_code]))
-    
-
-    # log the offer that is currently being processed
-    log_step(f"""Processing data for offer: {offer_id} \n 
-             Owner: {offer_data.firstName} {offer_data.lastName} \n
-             Owner oib: {offer_data.oib} \n
-             Address: {offer_data.full_address} \n
-             Contractor: {offer_data.contractor_firstName} {offer_data.contractor_lastName} \n
-             Contractor oib: {offer_data.contractor_oib} \n
-             Contractor address: {offer_data.contractor_full_address} \n
-             Chassis: {offer_data.chassis} \n
-             Registration: {offer_data.reg} \n
-             Leasing: {offer_data.leasing} \n
-             Kasko: {offer_data.only_kasko} \n
-             Bonus: {offer_data.bonus} \n""", log_file)
-    
-
     # Check whether there is a chassis number in database, if not, use registration number
     if str(offer_data.chassis) != "":
-        wait_and_click('xpath')
-        wait_and_input_text('id', offer_data.chassis)
-        browser.press_keys("id", "ENTER")
+        wait_and_click('xpath=//*[@id="P2000_BEZ_REG"]/div/div/div[2]')
+        wait_and_input_text('id=P2000_W1_0_SASIJA', offer_data.chassis)
+        browser.press_keys("id=P2000_W1_0_SASIJA", "ENTER")
         
     else:
-        wait_and_input_text("id", offer_data.reg)
-        browser.press_keys("id", "ENTER")
+        wait_and_input_text("id=P2000_W1_0_REGISTRACIJA", offer_data.reg)
+        browser.press_keys("id=P2000_W1_0_REGISTRACIJA", "ENTER")
 
     #10 seconds pause to allow the page to load
     time.sleep(10)
     
     # Check if the insurance policy is sold
-    if is_element_visible(get_text_xpath("sold insurance policy")):
-        set_status_column(offer_id, str(browser.get_element_attribute(get_text_xpath("sold insurance policy"), 'textContent')).split(".")[0])
-        return True
+    if is_element_visible(get_text_xpath("nije kandidat za obnovu")):
+        df["Status"] = str(browser.get_element_attribute(get_text_xpath("nije kandidat za obnovu"), 'textContent')).split(".")[0]
+        return df, True
     
-    browser.wait_until_element_is_visible('xpath', timeout=90)
+    browser.wait_until_element_is_visible('xpath=//*[@id="report_rgn_vozilo"]/tbody/tr[1]/td[2]', timeout=90)
 
     # frame_1 is a boolean variable that will be used to check if the 1st frame with elements has been selected
     frame_1 = False
 
     # Check if the registration number matches the one in database, if not, correct it
-    if (str(browser.get_element_attribute('xpath', "textContent"))[0:2] != str(offer_data.reg_prefix)) and (str(browser.get_element_attribute('xpath', "textContent")) != "BEZ TABLICE"):
-        click_element('xpath')
-        browser.wait_until_element_is_visible('xpath', timeout=90)
-        browser.select_frame('xpath')
-
-        table_xpath = 'xpath'
+    if (str(browser.get_element_attribute('xpath=//*[@id="report_rgn_vozilo"]/tbody/tr[1]/td[2]', "textContent"))[0:2] != str(offer_data.reg_prefix)) and (str(browser.get_element_attribute('xpath=//*[@id="report_rgn_vozilo"]/tbody/tr[3]/td[2]', "textContent")) != "BEZ TABLICE"):
+        click_element('xpath=//*[@id="btnIzmjeniVozilo"]/span[3]')
+        browser.wait_until_element_is_visible('xpath://iframe[@title="Vozilo"]', timeout=90)
+        browser.select_frame('xpath://iframe[@title="Vozilo"]')
+        time.sleep(10)
 
         if offer_data.reg_prefix != offer_data.reg:
-            wait_and_input_text("id, reg)
-            click_element('xpath')
-            click_element('xpath')
-            click_element('xpath')
+            wait_and_input_text("id=P2100_REGISTRACIJA", offer_data.reg)
+            click_element('xpath=//*[@id="P2100_32_10_VRG"]')
+            click_element('xpath=//*[@id="P2100_32_10_VRG"]/option[2]')
+            click_element('xpath=//*[@id="B263414227328991924"]')
 
         
-        elif is_element_visible(table_xpath) and (str(browser.get_element_attribute(table_xpath, "textContent"))[0:2] == offer_data.reg_prefix):
-            click_element('xpath')
-            click_element('xpath')
+        elif is_element_visible(cvh_xpath) and (str(browser.get_element_attribute(cvh_xpath, "textContent"))[0:2] == offer_data.reg_prefix):
+            click_element('xpath=//*[@id="btnCvhVozilo"]')
+            click_element('xpath=//*[@id="B263414227328991924"]')
 
         else:
-            wait_and_input_text("id", offer_data.reg)
-            click_element('xpath')
-            click_element('xpath')
-            browser.wait_until_element_is_visible('xpath', timeout=90)
-            text_content = str(browser.get_element_attribute('xpath', "textContent"))
+            wait_and_input_text("id=P2100_REGISTRACIJA", offer_data.reg)
+            click_element('xpath=//*[@id="P2100_32_10_VRG"]')
+            click_element('xpath=//*[@id="P2100_32_10_VRG"]/option[6]')
+            browser.wait_until_element_is_visible('xpath=//*[@id="report_vzlPregledReg"]/tbody/tr[3]/td[2]/span', timeout=90)
+            text_content = str(browser.get_element_attribute('xpath=//*[@id="report_vzlPregledReg"]/tbody/tr[3]/td[2]/span', "textContent"))
             option, vehicle_type = text_content.split(" - ")
-            input_text('xpath', option)
+            input_text('xpath=//*[@id="P2100_VSV_ID"]', option)
+            time.sleep(10)
             wait_and_click(get_text_xpath(vehicle_type))
-            click_element('xpath')
+            time.sleep(10)
+            click_element('xpath=//*[@id="B263414227328991924"]')
 
 
         browser.unselect_frame()
         frame_1 = True
-
+        
+    # Close all messages that might appear and obstruct other elements
     close_all()
 
-    # Selecting the correct option for leasing based on the database value
-    if offer_data.leasing:
-        click_element('xpath')
-    else:
-        click_element('xpath')
-
-    
     # Selecting the correct option for kasko based on the database value
     if offer_data.only_kasko:
-        if is_element_visible('xpath'):
-            click_element('xpath')
+        if is_element_visible('xpath=//*[@id="P2000_32_10_IND_AO_AK"]/div/div/div[1]'):
+            click_element('xpath=//*[@id="P2000_32_10_IND_AO_AK"]/div/div/div[1]')
     else:
-        if is_element_visible('xpath'):
-            click_element('xpath')
-        
-    # 5 seconds pause to allow the page to load
-    time.sleep(5)
+        if is_element_visible('xpath=//*[@id="P2000_32_10_IND_AO_AK"]/div/div/div[2]'):
+            click_element('xpath=//*[@id="P2000_32_10_IND_AO_AK"]/div/div/div[2]')
 
-    # Check if the input field for oib is visible
-    if is_element_visible('xpath'):
-        if offer_data.leasing:
-            input_text('xpath', offer_data.contractor_oib)
-            click_element('id')
-        else:
-            input_text('xpath', offer_data.oib)
-            click_element('id')
+    # Selecting the correct option for leasing based on the database value and check if the input field for oib is visible
+    if offer_data.leasing:
+        click_element('xpath=//*[@id="P2000_32_10_LSG"]/div/div/div[1]/label')
+        if is_element_visible(oib_input_field):
+            input_text(oib_input_field, offer_data.contractor_oib)
+            click_element('id=P2000_32_10_OIB_X_OPEN_LOV')
+    else:
+        click_element('xpath=//*[@id="P2000_32_10_LSG"]/div/div/div[2]/label')
+        if is_element_visible(oib_input_field):
+            input_text(oib_input_field, offer_data.oib)
+            click_element('id=P2000_32_10_OIB_X_OPEN_LOV')
 
-    # 2 seconds pause to allow the page to load
-    time.sleep(2)
+
+    # Close all messages that might appear and obstruct other elements
+    close_all()
 
     #selection window - it appears sometimes when there are multiple results for the entered oib
-    if is_element_visible('xpath'):
-        click_element('xpath')
+    type_key = "contractor_type" if offer_data.leasing else "customer_type"
+    type_value = getattr(offer_data, type_key)
+
+    if is_element_visible('xpath=//*[@id="P2000"]/div[6]'):
+        if type_value == "person" and is_element_visible_by_text_attribute("Fizička"):
+            click_element('xpath=//*[@id="mlov_tbl_stranka"]/tbody/tr/td[6]')
+            print_action = "Odabrao sam fizičku osobu."
+        elif type_value == "company" and is_element_visible_by_text_attribute("Obrtnik"):
+            browser.scroll_element_into_view(get_text_xpath("Obrtnik"))
+            click_element(get_text_xpath("Obrtnik"))
+            print_action = "Odabrao sam obrtnika."
+        else:
+            df["Status"] = "Nije moguće odrediti tip korisnika. Molim ručnu provjeru."
+            return df, True
+
+        if print_action:
+            #print(print_action)
+            click_element('xpath=//*[@id="sLovBtnGetVals"]')
+
     
-    # Defining a function to change the oib if it doesn't match the one in database
-    def change_oib(personal_identification_number):
-        input_text('id', personal_identification_number)
-        wait_and_input_text('xpath', personal_identification_number)
-        browser.press_keys('xpath', "ENTER")
-        wait_and_click('xpath')
-        click_element('xpath')
-        wait_and_click('xpath')
-        browser.unselect_frame()
-        
-    oib_xpath = 'xpath'
     browser.wait_until_element_is_visible(oib_xpath, timeout=90)
     coins_oib = str(browser.get_element_attribute(oib_xpath, 'textContent'))
     
     # Check if the oib matches the one in database, if not, correct it
+    frame_2 = False
     if offer_data.leasing and (coins_oib != str(offer_data.contractor_oib)):
-        click_element('xpath')
-        frame_2 = False
+        click_element('xpath=//*[@id="podaci_uloge"]')
         if frame_1:
-            browser.wait_until_element_is_visible('xpath', timeout=90)
-            browser.select_frame('xpath')
+            browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_2"]/iframe', timeout=90)
+            browser.select_frame('xpath=//*[@id="apex_dialog_2"]/iframe')
             frame_2 = True
         else:
-            browser.wait_until_element_is_visible('xpath', timeout=90)
-            browser.select_frame('xpath')
+            browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_1"]/iframe', timeout=90)
+            browser.select_frame('xpath=//*[@id="apex_dialog_1"]/iframe')
         change_oib(offer_data.contractor_oib)
 
 
     elif not offer_data.leasing and (coins_oib != str(offer_data.oib)):
-        click_element('xpath')
-        frame_2 = False
+        click_element('xpath=//*[@id="podaci_uloge"]')
+        
         if frame_1:
-            browser.wait_until_element_is_visible('xpath', timeout=90)
-            browser.select_frame('xpath')
+            browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_2"]/iframe', timeout=90)
+            browser.select_frame('xpath=//*[@id="apex_dialog_2"]/iframe')
             frame_2 = True
         else:
-            browser.wait_until_element_is_visible('xpath', timeout=90)
-            browser.select_frame('xpath')
+            browser.wait_until_element_is_visible('xpath=//*[@id="apex_dialog_1"]/iframe', timeout=90)
+            browser.select_frame('xpath=//*[@id="apex_dialog_1"]/iframe')
         change_oib(offer_data.oib)
+
     
     browser.wait_until_element_is_visible(oib_xpath, timeout=90)
 
-
     time.sleep(5)
+    
     # Close all messages that might appear and obstruct other elements
     close_all()
 
-    def get_xpath(row, column):
-        return f'//*[@id="some_id"]/tbody/tr[{row}]/td[{column}]'
-
-    def check_zip_code_mismatch(zip_code, rows):
-        for row in rows:
-            label = str(browser.get_element_attribute(get_xpath(row, 1), 'textContent'))
-            value = str(browser.get_element_attribute(get_xpath(row, 2), 'textContent'))
-            if label == "ZIP Code" and value != str(zip_code):
-                return True
-        return False
     rows_to_check = [5, 6]  
 
     if offer_data.leasing and check_zip_code_mismatch(offer_data.contractor_zip_code,rows_to_check):
-        set_status_column(offer_id, "Address data does not match.")
-        return True
-
+        df["Status"] = "Adresa ugovaratelja se ne podudara sa kpass-om."
+        return df, True
 
     elif not offer_data.leasing and check_zip_code_mismatch(offer_data.zip_code,rows_to_check):
-        set_status_column(offer_id, "Address data does not match.")
-        return True
-
-
-
-
+        df["Status"] = "Adresa korisnika se ne podudara sa kpass-om."
+        return df, True
+    
     if str(offer_data.bonus) not in ("50", "0"):
-        click_element('xpath')
-        browser.wait_until_element_is_visible('xpath', timeout=90)
-        browser.select_frame('xpath')
-        click_element('xpath)
-        browser.wait_until_element_is_visible('xpath', timeout=90)
-        if str(offer_data.bonus) == "10":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "15":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "20":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "25":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "30":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "35":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "40":
-            click_element('xpath')
-        elif str(offer_data.bonus) == "45":
-            click_element('xpath')
-        click_element('xpath')
+        df, success = set_bonus(df, offer_data.bonus)
+        if success:
+            return df, True
 
-        if is_element_visible_by_text_attribute("Some warning message"):
-            click_element('xpath')
-        if str(offer_data.bonus) == "" or None:
-            print("Bonus unknown")
-        browser.unselect_frame()
+    if is_element_visible('xpath=//*[@id="P2000_32_10_STK"]/div/div/div[1]/label'):
+        click_element('xpath=//*[@id="P2000_32_10_STK"]/div/div/div[1]/label')
 
-
-    if is_element_visible('xpath'):
-        click_element('xpath')
-
-    if is_element_visible('id'):
-        click_element('xpath')
-        browser.wait_until_element_is_visible(get_text_xpath("Some value"), timeout=60)
-        input_text('id', offer_data.reg_prefix)
-        time.sleep(5)
-        browser.press_keys('id', "ENTER")
-        time.sleep(5)
-        click_element('xpath')
+    if is_element_visible('id=P2000_32_10_RGP'):
+        set_registarsko_područje(offer_data.reg_prefix)
 
     time.sleep(5)
     # Close all messages that might appear and obstruct other elements
     close_all()
 
     # Wait for the "Izracun" button to appear and click on it
-    wait_and_click('id')
+    wait_and_click('id=btnIzracun')
 
-    log_step("All data imported correctly", log_file)
-    return False
+    return df, False
 
 
 
 # Step 5: Show the calculated premium and available discounts
-def show_premium(offer_id, bonus):
+def show_premium(df, offer_data):
     """Show the calculated premium and available discounts"""
-    time.sleep(15)
-    #Un-click whatever is clicked within a container
-    browser.wait_until_element_is_visible('xpath', timeout=60)
-    checked_elements = browser.find_elements('xpath//*[contains(@class, "mdl-switch-item__checked")]')
+    #Un-click whatever is clicked within "Rideri AO" container
+    browser.wait_until_element_is_visible('xpath=//*[@id="R262954840126205447"]', timeout=60)
+    checked_elements = browser.find_elements('xpath=//*[@id="R262954840126205447"]//*[contains(@class, "mdl-switch-item__checked")]')
+
     for element in checked_elements:
+        time.sleep(5)
         click_element(element)
 
-    log_step("Starting 'Calculating insurance premium' task", log_file)
-    insurance_premium_xpath = 'xpath'
+    insurance_premium_xpath = 'xpath=//*[@id="report_reg_izracun_ao"]/tbody/tr[1]/td[2]'
     browser.wait_until_element_is_visible(insurance_premium_xpath, timeout=60)
+    #print(browser.get_element_attribute(insurance_premium_xpath, "textContent"))
     element = str(browser.get_element_attribute(insurance_premium_xpath, "textContent")).replace(",", ".")
 
     bonus_multipliers = {
@@ -315,54 +323,36 @@ def show_premium(offer_id, bonus):
     }
 
     # Convert bonus to string and get the corresponding multiplier
-    multiplier = bonus_multipliers.get(str(bonus))
+    multiplier = bonus_multipliers.get(str(offer_data.bonus))
 
     # Calculate the insurance premium if the bonus is valid
     if multiplier is not None:
         insurance_premium = float(element) * multiplier
-        print(insurance_premium)
+        #print(insurance_premium)
     else:
-        print("Invalid bonus value")
+        df["Status"] = "Automatski izračun nije moguć. Molim ručni izračun."
+        return df, True
 
 
-    if is_element_visible('id):
+    if is_element_visible('id:kom_pop'):
         # Retrieve all options from the dropdown as WebElement objects
-        options_1 = Select(browser.find_element('id')).options
+        options_1 = Select(browser.find_element('id:kom_pop')).options
         # Get the last option's value
         commercial_discount = float(options_1[-1].get_attribute('value'))
     else:
-        commercial_discount = ""
+        commercial_discount = "Nema raspoloživog popusta"
 
-    if is_element_visible('id'):
+    if is_element_visible('id:pop_savjetnika'):
         #repeat the same for the second dropdown
-        options_2 = Select(browser.find_element('id')).options
+        options_2 = Select(browser.find_element('id:pop_savjetnika')).options
         advisor_discount = float(options_2[-1].get_attribute('value'))
     else:
-        advisor_discount = ""
+        advisor_discount = "Nema raspoloživog popusta"
 
-
-    df = pd.read_csv(csv_file)
     # Update the DataFrame
-    df.loc[df['ID'] == offer_id, 'Column1'] = insurance_premium
-    df.loc[df['ID'] == offer_id, 'Column2'] = commercial_discount
-    df.loc[df['ID'] == offer_id, 'Column3'] = advisor_discount
+    df['InsurancePremium'] = insurance_premium
+    df['CommercialDiscount'] = commercial_discount
+    df['AdvisorDiscount'] = advisor_discount
+    df['Status'] = "OK"
 
-    grouped = df.groupby('Column1')
-
-    # Fill missing values for each group
-    df['Column1'] = grouped['Column1'].transform(lambda x: x.ffill().bfill())
-    df['Column2'] = grouped['Column2'].transform(lambda x: x.ffill().bfill())
-    df['Column3'] = grouped['Column3'].transform(lambda x: x.ffill().bfill())
-
-    df.loc[df['ID'] == offer_id, 'Status'] = "Success"
-    df["Status"] = df["Status"].astype(str)
-    # Save the updated DataFrame back to the CSV file
-    df.to_csv(csv_file, index=False)
-
-    log_step("Insurance premium calculated successfully", log_file)
-
-
-# Step 6: Close the browser
-log_step("Closing the browser", log_file)
-close_browser()
-log_step("Browser closed successfully, process completed successfully", log_file)
+    return df, False
