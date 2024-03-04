@@ -6,7 +6,7 @@ import pandas as pd
 import traceback
 
 @task   # When you decorate a function with @task, it designates that function as a task that can be run by the robocorp-tasks runner.
-def insurance_premium_calculation(offer_id):
+def insurance_calculation(offer_id):
 
     df = pd.DataFrame()
     start_time = time.time()
